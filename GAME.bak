@@ -1,0 +1,830 @@
+#lang racket
+(require racket/gui)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MAIN WINDOW
+(define main-frame (new frame%
+                        [label "GAME PACK"]
+                        [width 800]
+                        [height 500]
+                        [style (list 'no-resize-border)]))
+(define main-canvas (new canvas%
+                         [parent main-frame]
+                         [paint-callback (lambda (event dc)
+                                           (send dc draw-bitmap main-bitmap 0 0))]))
+(define horizontal-panel (new horizontal-panel%
+                              [parent main-frame]
+                              [alignment (list 'center 'bottom)]
+                              [stretchable-height #f]
+                              ))
+(define snake-button (new button%
+                          [label "SNAKE"]
+                          [parent horizontal-panel]
+                          [callback (lambda (button event)
+                                      (send snake-frame show #t)
+                                      (send timer-snake start interval))]))
+(define tic-tac-toe-button (new button%
+                                [parent horizontal-panel]
+                                [label "TIC-TAC-TOE"]
+                                [callback (lambda (button event)
+                                            (send TTT-frame show #t))]))
+(define connect4-button (new button%
+                             [parent horizontal-panel]
+                             [label "CONNECT 4"]
+                             [callback (lambda (button event)
+                                         (send C4-frame show #t))]))
+(define main-bitmap (make-object bitmap% "Main.jpg"))
+
+(define (startup canvas dc start instruct diff)
+  (send dc set-pen "white" 5 'solid)
+  (send dc draw-rounded-rectangle 320 150 170 50 5) (send dc draw-text "START" 370 165) 
+  (send dc draw-rounded-rectangle 320 220 170 50 5) (send dc draw-text "INSTRUCTIONS" 330 235)
+  (send dc draw-rounded-rectangle 320 290 170 50 5) (send dc draw-text "DIFFICULTY" 345 305)
+  (send dc draw-rounded-rectangle 320 360 170 50 5) (send dc draw-text "EXIT" 380 375)
+  (send dc set-pen "black" 0.5 'solid))
+
+(define (difficulty canvas dc)
+  (send dc set-pen "white" 5 'solid)
+  (send dc draw-rounded-rectangle 320 150 170 50 5) (send dc draw-text "EASY" 375 165) 
+  (send dc draw-rounded-rectangle 320 220 170 50 5) (send dc draw-text "MEDIUM" 360 235)
+  (send dc draw-rounded-rectangle 320 290 170 50 5) (send dc draw-text "HARD" 375 305)
+  (send dc set-pen "white" 0 'solid))
+    
+  
+(send main-frame show #t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;k
+; SNAKE CODE
+
+
+
+; FRAME SIZE
+(define BLOCK-WIDTH 53)
+(define BLOCK-HEIGHT 32)
+; PIXEL SIZE
+(define BLOCK-SIZE 15)
+(define fruit (list 10 11))
+(define points 0)
+(define snake (list (list 5 1) (list 4 1)))
+(define direction 'r)
+(define start-snake #f)
+(define instruct-snake #f)
+(define diff-snake #f)
+(define interval 70)
+
+
+
+; The Bitmaps of all the images used.
+(define background-bitmap (make-object bitmap% "Background.jpg"))
+(define snake-instruct-bitmap (make-object bitmap% "Snake-Instructions.jpg"))
+
+; Move-block: integer -> list
+; Objective: removes the last element from the list and adds a new one at the beginning of it
+(define (move-block x y) 
+  (reverse (append (cdr (reverse snake)) (list(list x y)))))
+
+; Objective: takes the element in the position index of the first element of the list
+(define (handle position lst)
+  (list-ref (list-ref lst 0) position))
+
+; Objective: Draw a block on the given drawing object
+; The color argument can be a string or a color object
+
+(define (draw-block screen x y color) 
+  (send screen set-brush color 'solid)
+  (send screen draw-ellipse (* x BLOCK-SIZE) (* y BLOCK-SIZE) BLOCK-SIZE BLOCK-SIZE))
+
+; Objective: moves the snake to the given position ('l,' r, 'u or' d)
+; set! used to update
+(define (move-snake position)
+  (case position
+    ['l (set! snake (move-block (modulo (- (handle 0 snake) 1) 53) (handle 1 snake)))]
+    ['r (set! snake (move-block (+ (handle 0 snake) 1) (handle 1 snake)))]
+    ['u (set! snake (move-block (handle 0 snake) (- (handle 1 snake) 1)))]
+    ['d (set! snake (move-block (handle 0 snake) (+ (handle 1 snake) 1)))]))
+
+; Set-list: list list [number] [number] -> bool
+; Objective: check if the list of points fruit is in the snake list
+; G is the exclusion index
+(define (press-against snake bloco [i 0] [g 666]) 
+  (if (> (length snake) i)  ; length (snake) > i
+      (if (and (not (= g i)) (and 
+                              (eq? (list-ref (list-ref snake i) 0) (list-ref bloco 0)) ; check for x and y
+                              (eq? (list-ref (list-ref snake i) 1) (list-ref bloco 1)))) 
+          #t
+          (press-against snake bloco (+ i 1) g))
+      #f))
+
+
+; Grow-snake: -> void
+; Objective: to make a snake grow, to copy the last element of the snake list, moving a snake to another position
+; And added to the last element I previously hit
+
+(define grow-snake (lambda () 
+                     (define x (car (reverse snake)))
+                     (set! fruit (list (max 2 (inexact->exact (round (* (random) (- BLOCK-WIDTH 1))))) (max 2 (inexact->exact (round (* (random) (- BLOCK-HEIGHT 1))))) ))
+                     (move-snake direction)
+                     (set! points (add1 points))
+                     (set! snake (append snake (list x)))))
+
+; restart: ->void
+; Target: arrow all variables to the original state
+(define restart (lambda()
+                  (set! direction 'r)
+                  (set! fruit (list 10 10))
+                  (set! snake (list (list 2 1) (list 1 1)))
+                  (set! points 0)
+                  ))
+
+; Creates the window for the snake
+(define snake-frame (new frame% 
+                         [label "SNAKE"]
+                         [width (+ (* BLOCK-WIDTH BLOCK-SIZE) 11)]
+                         [height (+ (* BLOCK-HEIGHT BLOCK-SIZE) 29)]
+                         [style (list 'no-resize-border)]))
+
+; canvas-key: -> canvas%
+(define (canvas-key frame) (class canvas%
+                        
+                             (define/override (on-event mouse-event)
+                             
+                               (cond [(and (not instruct-snake)(click mouse-event 320 490 150 200) (not start-snake) (not diff-snake)) (begin (set! start-snake #t) (send dc clear) restart)]
+                                     [(and (not instruct-snake)(click mouse-event 320 490 220 270) (not start-snake) (not diff-snake)) (set! instruct-snake #t)]
+                                     [(and (not instruct-snake)(click mouse-event 320 490 290 340) (not start-snake) (not diff-snake)) (set! diff-snake #t)]
+                                     [(and (not instruct-snake)(click mouse-event 320 490 360 410) (not start-snake) (not diff-snake)) (send snake-frame show #f)]
+                                     [(and (not instruct-snake)(click mouse-event 320 490 150 200) diff-snake) (begin (send timer-snake start 100) (set! diff-snake #f))]
+                                     [(and (not instruct-snake)(click mouse-event 320 490 220 270) diff-snake) (begin (send timer-snake start 70) (set! diff-snake #f))]
+                                     [(and (not instruct-snake)(click mouse-event 320 490 290 340) diff-snake) (begin (send timer-snake start 50) (set! diff-snake #f))]
+                                     [(and (click mouse-event 650 750 400 450) instruct-snake) (set! instruct-snake #f)]))
+                             (define/override (on-char key-event)
+
+                               (cond [(eq? (send key-event get-key-code) 'left) (if (eq? direction 'r)
+                                                                                    (set! direction 'r)
+                                                                                    (set! direction 'l))]
+                                     [(eq? (send key-event get-key-code) 'right) (if (eq? direction 'l)
+                                                                                     (set! direction 'l)
+                                                                                     (set! direction 'r))]
+                                     [(eq? (send key-event get-key-code) 'up) (if (eq? direction 'd)
+                                                                                  (set! direction 'd)
+                                                                                  (set! direction 'u))]
+                                     [(eq? (send key-event get-key-code) 'down) (if (eq? direction 'u)
+                                                                                    (set! direction 'u)
+                                                                                    (set! direction 'd))]
+                                     [(eq? (send key-event get-key-code) '#\r) (restart)]
+                                     [(eq? (send key-event get-key-code) '#\e) (begin (set! start-snake #f) (restart))]))
+                             (super-new [parent frame])))
+
+
+; Update-snake: -> void
+; Objective: functions for screen updating and snake movement
+(define update-snake (lambda () 
+                       (draw-block dc (list-ref fruit 0) (list-ref fruit 1) "pink")                        ; Draw the fruit
+                       (cond [(press-against snake fruit) (grow-snake)]
+                             [else (move-snake direction)])                                                ; check by collision with fruit
+                       (send dc draw-text "SCORE" (-(* BLOCK-WIDTH BLOCK-SIZE) 90) 10)                     
+                       (send dc draw-text (number->string points) (-(* BLOCK-WIDTH BLOCK-SIZE) 50) 30)
+                       
+                       (for ([block snake]) 
+                         (if (eq? block (car snake)) 
+                             (draw-block dc (list-ref block 0) (list-ref block 1) "lightgreen") 
+                             (draw-block dc (list-ref block 0) (list-ref block 1) "lightgreen")))
+                       
+                       ))
+
+
+; Lost-the-gaem: -> void
+; Objective: events that occur while losing the game
+(define lost-the-game (lambda ()
+                        (send dc draw-text "YOU LOSE" 360 150)
+                        (send dc draw-text "PRESS 'R' TO RESTART"  300 200)
+                        (send dc draw-text "PRESS 'E' TO RETURN TO MAIN MENU"  220 220)
+                        ))
+
+; Instance canvas
+(define canvas (
+                new (canvas-key snake-frame)))
+
+; drawing canvas
+(define dc (send canvas get-dc))
+
+; Set a font
+(send dc set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+(send dc set-text-foreground "white")
+
+(define (startup-snake) (startup canvas dc start-snake instruct-snake diff-snake))
+(define (startup-diff-snake) (difficulty canvas dc))
+; Loop with collisions and frames
+(define timer-snake (new timer%
+                         [notify-callback (lambda()
+                                            (send dc clear)
+                                            (send dc set-brush "white" 'transparent)
+                                            (send dc draw-bitmap background-bitmap 0 0)
+                                           
+                                            (define collision #f)
+                                            (for ([block snake]
+                                                  [j (in-naturals 0)])
+                                              (cond 
+                                                [(or (> (list-ref block 0) (- BLOCK-WIDTH 2)) (> 1 (list-ref block 0))) (set! collision #t )]
+                                                [(or (> (list-ref block 1) (- BLOCK-HEIGHT 2)) (> 1 (list-ref block 1))) (set! collision #t)]
+                                                [(eq? #f collision) (set! collision (eq? #t (press-against snake block 0 j)))]))
+                                            (cond [(and (not instruct-snake)(not diff-snake)(not start-snake)) (startup-snake)]
+                                                  [(and (not instruct-snake)(not start-snake)diff-snake) (startup-diff-snake)]
+                                                  [instruct-snake (begin
+                                                                    (send dc clear)
+                                                                    (send dc draw-bitmap snake-instruct-bitmap 0 0)
+                                                                    (send dc set-pen "white" 5 'solid)
+                                                                    (send dc draw-text "BACK" 675 412)
+                                                                    (send dc draw-rounded-rectangle 650 400 100 50)
+                                                                    )]
+                                                  [collision (lost-the-game)]
+                                                  [else (update-snake)]))]
+                         [interval #f]))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; TTT CODE
+; GUI CODE
+(define TTT-frame (new frame%
+                       [label "TIC-TAC-TOE"]
+                       [width 805]
+                       [height 508]
+                       [style (list 'no-resize-border)]))
+(define (click event xl xr yu yd)
+  (and (eq? (send event get-event-type) 'left-down) (<= (send event get-x) xr)
+       (> (send event get-x) xl) (> (send event get-y) yu) (<= (send event get-y) yd)))
+; Initializing the values of Main screen
+(define TTT-instruct #f)
+(define TTT-start #t)
+
+; All the bitmaps used.
+(define TTT-background (make-object bitmap% "TTT.jpg"))
+(define TTT-instructions (make-object bitmap% "TTT-Instructions.jpg"))
+(define TTT-screen (make-object bitmap% "TTT-Background.jpg"))
+
+(define (canvas-key-TTT frame) (class canvas%                     
+                                 (define/override (on-event mouse-event)
+                                   (cond
+                                     [(and TTT-start (not TTT-instruct))
+                                      (begin 
+                                        (cond 
+                                          [(click mouse-event 320 490 150 200) (begin
+                                                                                 (set! TTT-start #f)
+                                                                                 (send dc-TTT clear)
+                                                                                 (send dc-TTT draw-bitmap TTT-background 0 0)
+                                                                                 (send dc-TTT set-pen "white" 5 'solid)
+                                                                                 (send dc-TTT draw-text "BACK" 666 420)
+                                                                                 (send dc-TTT draw-rounded-rectangle 641 410 100 50))]
+                                          [(click mouse-event 320 490 220 270) (set! TTT-instruct #t)]
+                                          [(click mouse-event 320 490 290 340) (send TTT-frame show #f)]))]
+                                     [(and TTT-start TTT-instruct (eq? (send mouse-event get-event-type) 'left-down))
+                                      (begin
+                                        (send dc-TTT clear)
+                                        (send dc-TTT draw-bitmap TTT-instructions 0 0)
+                                        (send dc-TTT set-pen "white" 5 'solid)
+                                        (send dc-TTT draw-text "BACK" 675 412)
+                                        (send dc-TTT draw-rounded-rectangle 650 400 100 50)
+                                        (cond [(click mouse-event 650 750 400 450)
+                                               (begin
+                                                 (set! TTT-instruct #f)
+                                                 (send dc-TTT clear)
+                                                 (send dc-TTT draw-bitmap TTT-screen 0 0)
+                                                 (send dc-TTT set-pen "white" 5 'solid)
+                                                 (send dc-TTT set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+                                                 (send dc-TTT set-text-foreground "white")
+                                                 (send dc-TTT draw-rounded-rectangle 320 150 170 50 5) (send dc-TTT draw-text "START" 370 165) 
+                                                 (send dc-TTT draw-rounded-rectangle 320 220 170 50 5) (send dc-TTT draw-text "INSTRUCTIONS" 330 235)
+                                                 (send dc-TTT draw-rounded-rectangle 320 290 170 50 5) (send dc-TTT draw-text "EXIT" 380 305))]))]
+                                     [(and (not TTT-start) (check-victory initial-board AI-player) (not TTT-instruct))
+                                      (begin
+                                        (sleep 2)
+                                        (send dc-TTT clear)
+                                        (set! initial-board initial-board1)
+                                        (set! lose (+ 1 lose))
+                                        (view-TTT initial-board)
+                                        (send dc-TTT set-text-foreground "black")
+                                        (send dc-TTT set-font (make-object font% 40 'system 'normal 'bold #f 'smoothed))
+                                        (send dc-TTT draw-text "YOU LOSE" 150 210)
+                                        (send dc-TTT set-text-foreground "white")
+                                        (sleep 2)
+                                        (view-TTT initial-board))]
+                                     [(and (not TTT-start)(check-victory initial-board H-player) (not TTT-instruct))
+                                      (begin
+                                        (sleep 2)
+                                        (send dc-TTT clear)
+                                        (set! initial-board initial-board1)
+                                        (set! win (+ 1 win))
+                                        (view-TTT initial-board)
+                                        (send dc-TTT set-text-foreground "black")
+                                        (send dc-TTT set-font (make-object font% 40 'system 'normal 'bold #f 'smoothed))
+                                        (send dc-TTT draw-text "YOU WIN" 190 210)
+                                        (send dc-TTT set-text-foreground "white")
+                                        (sleep 2)
+                                        (view-TTT initial-board))]
+                                     [(and (not TTT-start) (check-draw initial-board H-player) (not TTT-instruct))
+                                      (begin
+                                        (sleep 2)
+                                        (send dc-TTT clear)
+                                        (set! initial-board initial-board1)
+                                        (view-TTT initial-board)
+                                        (send dc-TTT set-text-foreground "black")
+                                        (send dc-TTT set-font (make-object font% 40 'system 'normal 'bold #f 'smoothed))
+                                        (send dc-TTT draw-text "DRAW" 200 210)
+                                        (send dc-TTT set-text-foreground "white")
+                                        (sleep 2)
+                                        (view-TTT initial-board))]
+      
+                                     [(and (not TTT-start) (click mouse-event 120 215 100 180) (C 0)  (not TTT-instruct)) (begin
+                                                                                                                            (set! initial-board (set-move initial-board 0 H-player))
+                                                                                                                            (set! initial-board (move initial-board))
+                                                                                                                            (view-TTT initial-board))]
+                                     
+                                     [(and (not TTT-start) (click mouse-event 215 355 100 180) (C 1) (not TTT-instruct)) (begin
+                                                                                                                           (set! initial-board (set-move initial-board 1 H-player))
+                                                                                                                           (set! initial-board (move initial-board))
+                                                                                                                           (view-TTT initial-board))]
+                                     [(and (not TTT-start) (click mouse-event 355 455 100 180) (C 2) (not TTT-instruct)) (begin
+                                                                                                                           (set! initial-board (set-move initial-board 2 H-player))
+                                                                                                                           (set! initial-board (move initial-board))
+                                                                                                                           (view-TTT initial-board))]
+                                     [(and (not TTT-start) (click mouse-event 120 215 210 290) (C 3) (not TTT-instruct)) (begin
+                                                                                                                           (set! initial-board (set-move initial-board 3 H-player))
+                                                                                                                           (set! initial-board (move initial-board))
+                                                                                                                           (view-TTT initial-board))]
+                                     [(and (not TTT-start)(click mouse-event 215 355 210 290) (C 4) (not TTT-instruct)) (begin
+                                                                                                                          (set! initial-board (set-move initial-board 4 H-player))
+                                                                                                                          (set! initial-board (move initial-board))
+                                                                                                                          (view-TTT initial-board))]
+                                     [(and (not TTT-start) (click mouse-event 355 455 210 290) (C 5)(not TTT-instruct)) (begin
+                                                                                                                          (set! initial-board (set-move initial-board 5 H-player))
+                                                                                                                          (set! initial-board (move initial-board))
+                                                                                                                          (view-TTT initial-board))]
+                                     [(and (not TTT-start) (click mouse-event 120 215 320 400) (C 6)(not TTT-instruct)) (begin
+                                                                                                                           (set! initial-board (set-move initial-board 6 H-player))
+                                                                                                                           (set! initial-board (move initial-board))
+                                                                                                                           (view-TTT initial-board))]
+                                     [(and (not TTT-start) (click mouse-event 215 355 320 400) (C 7) (not TTT-instruct)) (begin
+                                                                                                                           (set! initial-board (set-move initial-board 7 H-player))
+                                                                                                                           (set! initial-board (move initial-board))
+                                                                                                                           (view-TTT initial-board))]
+                                     [(and (not TTT-start) (click mouse-event 355 455 320 400) (C 8) (not TTT-instruct)) (begin
+                                                                                                                           (set! initial-board (set-move initial-board 8 H-player))
+                                                                                                                           (set! initial-board (move initial-board))
+                                                                                                                           (view-TTT initial-board))]
+                                     
+                                     [(and (not TTT-start) (not TTT-instruct) (click mouse-event 641 741 410 460)) (begin
+                                                                                                                     (set! TTT-start #t)
+                                                                                                                     (send dc-TTT clear)
+                                                                                                                     (send dc-TTT draw-bitmap TTT-screen 0 0)
+                                                                                                                     (send dc-TTT set-pen "white" 5 'solid)
+                                                                                                                     (send dc-TTT set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+                                                                                                                     (send dc-TTT set-text-foreground "white")
+                                                                                                                     (send dc-TTT draw-rounded-rectangle 320 150 170 50 5) (send dc-TTT draw-text "START" 370 165) 
+                                                                                                                     (send dc-TTT draw-rounded-rectangle 320 220 170 50 5) (send dc-TTT draw-text "INSTRUCTIONS" 330 235)
+                                                                                                                     (send dc-TTT draw-rounded-rectangle 320 290 170 50 5) (send dc-TTT draw-text "EXIT" 380 305))]))
+                                 
+                                 (super-new [parent frame])))
+; To check whether a location is empty
+(define (C i)
+  (eq? (cdr (list-ref initial-board i)) "K"))
+; The main TTT canvas
+(define TTT-canvas (new (canvas-key-TTT TTT-frame)
+                        [style (list 'transparent)]
+                        [paint-callback (lambda (mouse-event dc)
+                                          (send dc draw-bitmap TTT-screen 0 0)
+                                          (send dc-TTT set-pen "white" 5 'solid)
+                                          (send dc-TTT set-brush "white" 'transparent)
+                                          (send dc-TTT set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+                                          (send dc-TTT set-text-foreground "white")
+                                          (send dc-TTT draw-rounded-rectangle 320 150 170 50 5) (send dc-TTT draw-text "START" 370 165) 
+                                          (send dc-TTT draw-rounded-rectangle 320 220 170 50 5) (send dc-TTT draw-text "INSTRUCTIONS" 330 235)
+                                          (send dc-TTT draw-rounded-rectangle 320 290 170 50 5) (send dc-TTT draw-text "EXIT" 380 305))]))
+(define dc-TTT (send TTT-canvas get-dc))
+(send dc-TTT set-brush "white" 'transparent)
+
+(define win 0)
+(define lose 0)
+(define (view-TTT board)
+  (send dc-TTT clear)
+  (send dc-TTT draw-bitmap TTT-background 0 0)
+  (send dc-TTT set-brush "white" 'transparent)
+  (send dc-TTT set-font (make-object font% 40 'system 'normal 'bold))
+  (send dc-TTT draw-text (number->string win) 675 120)
+  (send dc-TTT draw-text (number->string lose) 675 300)
+  (send dc-TTT set-pen "white" 5 'solid)
+  (send dc-TTT set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+  (send dc-TTT draw-text "BACK" 666 420)
+  (send dc-TTT set-font (make-object font% 40 'system 'normal 'bold))
+  (send dc-TTT draw-rounded-rectangle 641 410 100 50)
+  (for ([i board])
+    (cond 
+      [(eq? (cdr i) "K") (send dc-TTT draw-text "." 500 500)]
+      [(eq? 0 (car i)) (send dc-TTT draw-text (cdr i) 150 100)]
+      [(eq? 1 (car i)) (send dc-TTT draw-text (cdr i) 270 100)]
+      [(eq? 2 (car i)) (send dc-TTT draw-text (cdr i) 390 100)]
+      [(eq? 3 (car i)) (send dc-TTT draw-text (cdr i) 150 210)]
+      [(eq? 4 (car i)) (send dc-TTT draw-text (cdr i) 270 210)]
+      [(eq? 5 (car i)) (send dc-TTT draw-text (cdr i) 390 210)]
+      [(eq? 6 (car i)) (send dc-TTT draw-text (cdr i) 150 320)]
+      [(eq? 7 (car i)) (send dc-TTT draw-text (cdr i) 270 320)]
+      [(eq? 8 (car i)) (send dc-TTT draw-text (cdr i) 390 320)])))
+  
+  
+  
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; AI CODE
+(define initial-board (list (cons 0 "K") (cons 1 "K") (cons 2 "K")
+                            (cons 3 "K") (cons 4 "K") (cons 5 "K") 
+                            (cons 6 "K") (cons 7 "K") (cons 8 "K")))
+(define initial-board1 (list (cons 0 "K") (cons 1 "K") (cons 2 "K")
+                             (cons 3 "K") (cons 4 "K") (cons 5 "K") 
+                             (cons 6 "K") (cons 7 "K") (cons 8 "K")))
+(define AI-player "O")
+(define H-player "X")
+(define win-list '((0 1 2) (3 4 5) (6 7 8) (0 3 6) (1 4 7) (2 5 8) (0 4 8) (2 4 6)))
+
+(define (helper1 l ans)
+  (if (null? l)
+      ans
+      (helper1 (cdr l) (if (eq? (cdr (car l)) "P")
+                           ans
+                           (max ans (cdr (car l)))))))
+(define (helper2 l ans)
+  (if (null? l)
+      ans
+      (helper2 (cdr l) (if (eq? (cdr (car l)) "P")
+                           ans
+                           (min ans (cdr (car l)))))))
+(define (best-score board player)      
+  (if (eq? player H-player)
+      (helper1 board -500)
+      (helper2 board 500)))
+
+(define (next-player player)
+  (if (eq? player AI-player)
+      H-player
+      AI-player))
+
+(define (pos-score board player)
+  (cond [(check-victory board AI-player) (cons (cons "A" +10) '())]
+        [(check-victory board H-player) (cons (cons "A" -10) '())]
+        [(check-draw board player) (cons (cons "A" 0) '())]
+        [else (map (lambda (x) (if(eq? "K" (cdr x))
+                                  (cons (car x) (best-score (pos-score (set-move board (car x) player) (next-player player)) player))
+                                  (cons (car x) "P"))) board)]))
+
+(define (move board)
+  (define list (pos-score board AI-player))
+  (define (helper l posn max-score)
+    (if (null? l)
+        (set-move board posn AI-player)
+        (if (eq? "P" (cdr (car l)))
+            (helper (cdr l) posn max-score)
+            (if (>= (cdr (car l)) max-score)
+                (helper (cdr l) (car (car l)) (cdr (car l)))
+                (helper (cdr l) posn max-score)))))
+  (helper list 0 -100))
+
+
+   
+(define (check-victory board player)
+  (define (check board l sym)
+    (if (and (eq? sym (cdr (list-ref board (car l))))
+             (eq? sym (cdr (list-ref board (cadr l))))
+             (eq? sym (cdr (list-ref board (caddr l)))))
+        #t
+        #f))
+  (if (eq? player H-player)
+      (foldr (lambda (x y) (or y (check board x "X"))) #f win-list)
+      (foldr (lambda (x y) (or y (check board x "O"))) #f win-list)))
+
+(define (check-draw board player)
+  (and (not (check-victory board player)) (foldr (lambda (x y) (and (not (eq? (cdr x) "K")) y)) #t board)))
+(define (set-move board i player)
+  (define (helper board ctr)
+    (if (null? board)
+        '()
+        (if (eq? ctr i)
+            (cons (cons i player) (helper (cdr board) (+ 1 ctr)))
+            (cons (car board) (helper (cdr board) (+ 1 ctr))))))
+  (helper board 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; CONNECT 4
+; AI CODE
+
+(define AI-Player "R")
+(define H-Player "Y")
+(define depth-C4 6)
+(define start-C4 #f)
+(define instruct-C4 #f)
+(define diff-C4 #f)
+(define key-C4 #f)
+
+; All the images that have been used
+(define C4-background (make-object bitmap% "C4.jpg"))
+(define C4-background-1 (make-object bitmap% "C4-1.jpg"))
+(define red (make-object bitmap% "Red.png" 'png/alpha))
+(define yellow (make-object bitmap% "Yellow.png" 'png/alpha))
+(define arrow (make-object bitmap% "Arrow.png" 'png/alpha))
+(define empty (make-object bitmap% "empty.png" 'png/alpha))
+(define blink-disc (make-object bitmap% "Arrow.png" 'png/alpha))
+(define C4-instruct-bitmap (make-object bitmap% "C4-Instructions.jpg")) 
+
+; Initial condition and the current condition of the board
+(define initial-board-C4  (make-list 6 (make-list 7 "E")))
+(define current-board-C4  (make-list 6 (make-list 7 "E")))
+
+; To create list of all possible rows and colunms
+(define (super-list board)  
+  (define (row-list) board)
+  (define (column-list)
+    (foldr (lambda (a b) (cons (foldr (lambda (x y) (cons (list-ref x a) y)) '() board) b)) '() '(0 1 2 3 4 5 6)))
+  (define (diag-list)
+    (define (helper1 x y)
+      (if (and (< x 6) (< y 7)) (cons (list-ref (list-ref board x) y) (helper1 (+ x 1) (+ y 1)))
+          '()))
+    (define (helper2 x y)
+      (if (and (< x 6) (> y -1)) (cons (list-ref (list-ref board x) y) (helper2 (+ x 1) (- y 1)))
+          '()))
+    (list (helper1 2 0) (helper1 1 0) (helper1 0 0) (helper1 0 1) (helper1 0 2) (helper1 0 3)
+          (helper2 0 3) (helper2 0 4) (helper2 0 5) (helper2 0 6) (helper2 1 6) (helper2 2 6)))
+  (define bool (foldr (lambda (x y) (and (equal? "E" x) y)) #t (list-ref board 2)))
+  (if (equal? bool #t)
+      (row-list)
+      (append (row-list) (column-list) (diag-list))))
+; Blink
+(define (blink board player)
+  (define (check-blink1 list player)
+    (define count 0)
+    (define (helper l)
+      (cond [(null? l) (begin (set! count 0) #f)]
+            [(and (= count 3) (equal? (car l) player)) (begin (set! count 0) #t)]
+            [(and (not (= count 3)) (equal? (car l) player)) (begin (set! count (+ count 1)) (helper (cdr l)))]
+            [else (begin (set! count 0) (helper (cdr l)))]))
+    (foldr (lambda (x y) (cons (helper x) y)) '() list))
+  (define temp1 (check-blink1 (super-list board) player))
+  (define temp2 (index-of temp1 #t))
+  (define temp3 (list-ref (super-list board) temp2))
+  (define (check-blink2 l player)
+    (define (helper l count ctr)
+      (cond [(and (= count 3) (equal? player (car l))) (- ctr 3)]
+            [(equal? (car l) player) (helper (cdr l) (+ 1 count) (+ 1 ctr))]
+            [else (helper (cdr l) 0 (+ 1 ctr))]))
+    (helper l 0 0))
+  (define position (cons temp2 (check-blink2 temp3 player)))
+  
+  (define temp4
+    (cond [(< temp2 6) (list (cons temp2 (cdr position)) (cons temp2 (+ 1 (cdr position)))
+                             (cons temp2 (+ 2 (cdr position))) (cons temp2 (+ 3 (cdr position))))]
+          [(< temp2 13) (list (cons (cdr position) (- temp2 6)) (cons (+ 1 (cdr position)) (- temp2 6))
+                              (cons (+ 2 (cdr position)) (- temp2 6)) (cons (+ 3 (cdr position)) (- temp2 6)))]
+          [(< temp2 16) (let* ((a (+ (cdr position) (- 15 temp2)))
+                               (b (cdr position)))
+                          (list (cons a b) (cons (+ a 1) (+ b 1)) (cons (+ a 2) (+ b 2)) (cons (+ a 3) (+ b 3))))]
+          [(< temp2 19) (let* ((a (cdr position))
+                               (b (+ (cdr position) (- temp2 15))))
+                          (list (cons a b) (cons (+ a 1) (+ b 1)) (cons (+ a 2) (+ b 2)) (cons (+ a 3) (+ b 3))))]
+          [(< temp2 22) (let* ((a (cdr position))
+                               (b (- (- temp2 16) (cdr position))))
+                          (list (cons a b) (cons (+ a 1) (- b 1)) (cons (+ a 2) (- b 2)) (cons (+ a 3) (- b 3))))]
+          [(< temp2 25) (let* ((a (+ (- temp2 22) (cdr position)))
+                               (b (- 6 (cdr position))))
+                          (list (cons a b) (cons (+ a 1) (- b 1)) (cons (+ a 2) (- b 2)) (cons (+ a 3) (- b 3))))]))
+  (define (glow l)
+    (cond [(not (null? l)) (begin
+                             (send dc-C4 draw-bitmap blink-disc (+ 199 (* 80 (cdr (car l)))) (+ 31 (* 80 (car (car l)))))
+                             (glow (cdr l)))]))
+  (begin (glow temp4) (sleep 0.5) (send dc-C4 clear) (view board) (sleep 0.5)
+         (glow temp4) (sleep 0.5) (send dc-C4 clear) (view board) (sleep 0.5)
+         (glow temp4) (sleep 2)))
+     
+; To check the victory of a player
+(define (check-victory-C4 board player)
+  (define (checker list player)
+    (define count 0)
+    (define (helper l)
+      (cond [(null? l) (begin (set! count 0) #f)]
+            [(and (= count 3) (equal? (car l) player)) (begin (set! count 0) #t)]
+            [(and (not (= count 3)) (equal? (car l) player)) (begin (set! count (+ count 1)) (helper (cdr l)))]
+            [else (begin (set! count 0) (helper (cdr l)))]))
+    (foldr (lambda (x y) (or (helper x) y)) #f list))
+  (checker (super-list board) player))
+; To check for draw
+(define (check-draw-C4 board)
+  (foldr (lambda (a b) (and (foldr (lambda (x y) (and (not (equal? "E" (list-ref x a))) y)) #t board) b)) #t '(0 1 2 3 4 5 6)))
+
+; Returns a board with move of "Player" added to the "Board" at the "X" colunm
+(define (move-C4 x player board)
+  (define (update-board row colunm player-u board-u)
+    (define temp (list-ref board-u (- row 1)))
+    (set! temp (list-set temp (- colunm 1) player-u))
+    (set! board-u (list-set board-u (- row 1) temp))
+    board-u)
+  (define (column-list)
+    (foldr (lambda (a b) (cons (foldr (lambda (x y) (cons (list-ref x a) y)) '() board) b)) '() '(0 1 2 3 4 5 6)))
+  (define l (list-ref (column-list) (- x 1)))
+  (define count 0)
+  (define (helper)
+    (cond [(= count 6) 6]
+          [(not (equal? "E" (list-ref l count))) count]
+          [else (begin (set! count (+ 1 count))
+                       (helper))]))
+  (let* ((temp (- (helper) 1)))
+    (cond [(= temp -1) board]
+          [else (update-board (+ 1 temp) x player board)])))
+
+; To switch between players
+(define (next-player-C4 player)
+  (if (equal? player AI-Player)
+      H-Player
+      AI-Player))
+
+; Algorithm "MINIMAX" to generate AI-Move. Sets the current-board after playing the move.
+(define (AI-move)
+  (define l '(1 2 3 4 5 6 7))
+  (define (score-list board player lt count)
+    (cond [(check-victory-C4 board AI-Player) (list (- 100 count))]
+          [(check-victory-C4 board H-Player) (list (- count 100))]
+          [(check-draw-C4 board) (list 0)]
+          [(= count depth-C4) (list 0)]
+          [else (foldr (lambda (x y) (cons (if (not (equal? "E" (list-ref (list-ref board 0) (- x 1))))
+                                               (if (equal? player AI-Player)
+                                                   -10000
+                                                   +10000)
+                                               (if (equal? player AI-Player)
+                                                   (argmin (lambda (a) a) (score-list (move-C4 x player board) (next-player-C4 player) lt (+ 1 count)))
+                                                   (argmax (lambda (a) a) (score-list (move-C4 x player board) (next-player-C4 player) lt (+ 1 count)))))
+                                           y)) '() l)]))
+  (define temp (score-list current-board-C4 AI-Player l 1))
+  (define (max-list l)
+    (define k (argmax (lambda (a) a) l))
+    (define (helper l1 ans ctr)
+      (if (null? l1) ans
+          (if (= (car l1) k)
+              (helper (cdr l1) (cons ctr ans) (+ ctr 1))
+              (helper (cdr l1) ans (+ ctr 1)))))
+    (helper l '() 0))
+  (define k (let* ((x (max-list temp)))
+              (list-ref x (random (length x)))))
+  (set! current-board-C4 (move-C4 (+ k 1) AI-Player current-board-C4)))
+
+     
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; GUI CODE
+
+(define C4-frame (new frame%
+                      [label "CONNECT 4"]
+                      [width 805]
+                      [height 568]
+                      [style (list 'no-resize-border)]))
+
+; To display the current-board
+(define (view board)
+  (define (helper row colunm)
+    (cond [(and (= row 5) (= colunm 6)) (cond [(equal? (list-ref (list-ref current-board-C4 row) colunm) "R") (send dc-C4 draw-bitmap red (+ 199 (* 80 colunm)) (+ 31 (* 80 row)))]
+                                              [(equal? (list-ref (list-ref current-board-C4 row) colunm) "Y") (send dc-C4 draw-bitmap yellow (+ 195 (* 80 colunm)) (+ 23 (* 80 row)))]
+                                              [else (send dc-C4 draw-bitmap empty 0 0)])]
+          [(< colunm 7) (begin (cond [(equal? (list-ref (list-ref current-board-C4 row) colunm) "R") (send dc-C4 draw-bitmap red (+ 199 (* 80 colunm)) (+ 31 (* 80 row)))]
+                                     [(equal? (list-ref (list-ref current-board-C4 row) colunm) "Y") (send dc-C4 draw-bitmap yellow (+ 195 (* 80 colunm)) (+ 23 (* 80 row)))]
+                                     [else (send dc-C4 draw-bitmap empty 0 0)])
+                               (helper row (+ 1 colunm)))]
+          [(= colunm 7) (helper (+ 1 row) 0)]))
+  (send dc-C4 draw-bitmap C4-background 0 0)
+  (helper 0 0))
+
+; Adds disk to the clicked location
+(define (add-disk x)
+  
+  (if (equal? current-board-C4 (move-C4 x H-Player current-board-C4))
+      (set! current-board-C4 current-board-C4)
+      (begin (set! current-board-C4 (move-C4 x H-Player current-board-C4))
+             (view current-board-C4)
+             (AI-move)))
+  (view current-board-C4))
+  
+; Draws an arrow
+(define (draw-arrow x)
+  (send dc-C4 clear)
+  (view current-board-C4)
+  (cond [(= x 1) (send dc-C4 draw-bitmap arrow 213 5)]
+        [(= x 2) (send dc-C4 draw-bitmap arrow 293 5)]
+        [(= x 3) (send dc-C4 draw-bitmap arrow 373 5)]
+        [(= x 4) (send dc-C4 draw-bitmap arrow 453 5)]
+        [(= x 5) (send dc-C4 draw-bitmap arrow 533 5)]
+        [(= x 6) (send dc-C4 draw-bitmap arrow 613 5)]
+        [(= x 7) (send dc-C4 draw-bitmap arrow 693 5)]))
+
+(define (pointer event xl xr)
+  (and (<= (send event get-x) xr) (> (send event get-x) xl)))
+(define (click-C4 event)
+  (eq? (send event get-event-type) 'left-down))
+
+                   
+; Canvas overriden       
+(define (canvas-key-C4 frame)
+  (class canvas%
+    (define/override (on-event mouse-event)
+      (cond [(and (not instruct-C4)(not start-C4) (not key-C4))
+             (begin (send dc-C4 clear) (send dc-C4 draw-bitmap C4-background-1 0 0) (startup C4-canvas dc-C4 start-C4 instruct-C4 diff-C4)
+                    (cond [(and (click mouse-event 320 490 150 200) (not diff-C4)) (set! start-C4 #t)]
+                          [(and (click mouse-event 320 490 220 270)  (not diff-C4)) (set! instruct-C4 #t)]
+                          [(and (click mouse-event 320 490 290 340) (not diff-C4)) (begin (set! diff-C4 #t) (set! start-C4 #t))]
+                          [(and (click mouse-event 320 490 360 410) (not diff-C4)) (send C4-frame show #f)]))]
+            [(and diff-C4 (not key-C4) (not instruct-C4))
+             (begin (send dc-C4 clear) (send dc-C4 draw-bitmap C4-background-1 0 0) (difficulty C4-canvas dc-C4)
+                    (cond
+                      [(and (click mouse-event 320 490 150 200) diff-C4) (begin (set! depth-C4 4) (set! diff-C4 #f) (set! start-C4 #f))]
+                      [(and (click mouse-event 320 490 220 270) diff-C4) (begin (set! depth-C4 5) (set! diff-C4 #f) (set! start-C4 #f))]
+                      [(and (click mouse-event 320 490 290 340) diff-C4) (begin (set! depth-C4 6) (set! diff-C4 #f) (set! start-C4 #f))]))]
+            
+            [(and instruct-C4 (not key-C4) (not start-C4)) (begin
+                                                             (send dc-C4 clear)
+                                                             (send dc-C4 draw-bitmap C4-instruct-bitmap 0 0)
+                                                             (send dc-C4 set-pen "white" 5 'solid)
+                                                             (send dc-C4 draw-text "BACK" 695 482)
+                                                             (send dc-C4 draw-rounded-rectangle 670 470 100 50)
+                                                             (cond [(click mouse-event 670 770 470 520) (set! instruct-C4 #f)]
+                                                                   ))]
+            [(and start-C4 (not key-C4) (not instruct-C4))
+             (cond [(check-victory-C4 current-board-C4 H-Player) (begin
+                                                                   (sleep 0.5)
+                                                                   (blink current-board-C4 "Y")
+                                                                   (send dc-C4 clear)
+                                                                   (send dc-C4 draw-bitmap C4-background-1 0 0)
+                                                                   (send dc-C4 set-font (make-object font% 60 'decorative 'normal 'bold #f 'smoothed))
+                                                                   (send dc-C4 draw-text "YOU WIN :)" 190 225)
+                                                                   (send dc-C4 set-font (make-object font% 20 'decorative 'normal 'bold #f 'smoothed))
+                                                                   (send dc-C4 draw-text "PRESS 'R' TO RESTART"  230 100)
+                                                                   (send dc-C4 draw-text "PRESS 'E' TO RETURN TO MAIN MENU"  125 130)
+                                                                   (send dc-C4 set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+                                                                   (set! key-C4 #t))]
+                   [(check-victory-C4 current-board-C4 AI-Player) (begin
+                                                                    (sleep 0.5)
+                                                                    (blink current-board-C4 "R")
+                                                                    (send dc-C4 clear)
+                                                                    (send dc-C4 draw-bitmap C4-background-1 0 0)
+                                                                    (send dc-C4 set-font (make-object font% 60 'decorative 'normal 'bold #f 'smoothed))
+                                                                    (send dc-C4 draw-text "YOU LOSE :(" 130 225)
+                                                                    (send dc-C4 set-font (make-object font% 20 'decorative 'normal 'bold #f 'smoothed))
+                                                                    (send dc-C4 draw-text "PRESS 'R' TO RESTART"  230 100)
+                                                                    (send dc-C4 draw-text "PRESS 'E' TO RETURN TO MAIN MENU" 125 130)
+                                                                    (send dc-C4 set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+                                                                    (set! key-C4 #t))]
+                   [(check-draw-C4 current-board-C4) (begin
+                                                       (sleep 3)
+                                                       (send dc-C4 clear)
+                                                       (send dc-C4 draw-bitmap C4-background-1 0 0)
+                                                       (send dc-C4 set-font (make-object font% 60 'decorative 'normal 'bold #f 'smoothed))
+                                                       (send dc-C4 draw-text "|: DRAW :|" 190 225)
+                                                       (send dc-C4 set-font (make-object font% 20 'decorative 'normal 'bold #f 'smoothed))
+                                                       (send dc-C4 draw-text "PRESS 'R' TO RESTART"  2430 100)
+                                                       (send dc-C4 draw-text "PRESS 'E' TO RETURN TO MAIN MENU"  125 130)
+                                                       (send dc-C4 set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+                                                       (set! key-C4 #t))]
+                   
+            
+                   [(pointer mouse-event 213 273) (if (click-C4 mouse-event)
+                                                      (add-disk 1)
+                                                      (draw-arrow 1))]
+                   [(pointer mouse-event 293 353) (if (click-C4 mouse-event)
+                                                      (add-disk 2)
+                                                      (draw-arrow 2))]
+                   [(pointer mouse-event 373 433) (if (click-C4 mouse-event)
+                                                      (add-disk 3)
+                                                      (draw-arrow 3))]
+                   [(pointer mouse-event 453 513) (if (click-C4 mouse-event)
+                                                      (add-disk 4)
+                                                      (draw-arrow 4))]
+                   [(pointer mouse-event 533 593) (if (click-C4 mouse-event)
+                                                      (add-disk 5)
+                                                      (draw-arrow 5))]
+                   [(pointer mouse-event 613 673) (if (click-C4 mouse-event)
+                                                      (add-disk 6)
+                                                      (draw-arrow 6))]
+                   [(pointer mouse-event 693 753) (if (click-C4 mouse-event)
+                                                      (add-disk 7)
+                                                      (draw-arrow 7))])]))
+    (define/override (on-char key-event)
+      (cond [(and (eq? (send key-event get-key-code) '#\r) key-C4) (begin (set! current-board-C4 initial-board-C4) (set! key-C4 #f) (set! start-C4 #t)
+                                                                          (send dc-C4 clear) (view current-board-C4))]
+            [(and (eq? (send key-event get-key-code) '#\e) key-C4) (begin (set! current-board-C4 initial-board-C4) (set! key-C4 #f) (set! start-C4 #f)
+                                                                          (send dc-C4 clear) (send dc-C4 draw-bitmap C4-background-1 0 0) (startup C4-canvas dc-C4 start-C4 instruct-C4 diff-C4))]))
+    (super-new [parent frame])))
+                       
+
+(define C4-canvas (new (canvas-key-C4 C4-frame)
+                       [paint-callback (lambda (event dc)
+                                         (send dc draw-bitmap C4-background-1 0 0))]))
+(define dc-C4 (send C4-canvas get-dc))
+(send dc-C4 set-font (make-object font% 14 'system 'normal 'bold #f 'smoothed))
+(send dc-C4 set-text-foreground "white")
+(send dc-C4 set-brush "white" 'transparent)
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;                                                        END OF THE CODE
+
+
+
